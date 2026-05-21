@@ -247,54 +247,6 @@ public class Interpreter implements Visitor<Value> {
         throw new UnsupportedOperationException("Cannot evaluate access operation. Operation 'access' is not defined for parent type '" + evaluatedParent.type() + "'.");
     }
 
-    private FunctionValue createFunction(FunctionNode node) {
-        List<String> parameterNames = new ArrayList<>();
-        List<TypeValue> parameterTypes = new ArrayList<>();
-
-        for (ParameterNode parameter: node.parameters()) {
-            parameterNames.add(parameter.name());
-            parameterTypes.add(evaluateToType(parameter.type()));
-        }
-
-        SignatureValue signatureValue = new SignatureValue(parameterTypes, evaluateToType(node.returnType()));
-
-        Function<List<Value>, Value> function = (args) -> {
-            Scope oldScope = currentScope;
-            currentScope = new Scope(oldScope);
-
-            for (int i = 0; i < (node.vararg() ? signatureValue.parameterTypes().size()-1 : signatureValue.parameterTypes().size()); i++) {
-                ParameterNode parameter = node.parameters().get(i);
-                String parameterName = parameter.name();
-                TypeValue parameterType = evaluateToType(parameter.type());
-
-                currentScope.declare(new Symbol(false, parameterName, parameterType, args.get(i)));
-            }
-
-            if (node.vararg()) {
-                ParameterNode parameter = node.parameters().getLast();
-                String varargName = parameter.name();
-                TypeValue varargType = parameter.type().accept(this);
-                ArrayTypeValue varargListType = new ArrayTypeValue(varargType);
-
-                List<Value> varargValues = new ArrayList<>();
-                for (int i = signatureValue.parameterTypes().size()-1; i < evaluatedArgs.size(); i++) {
-                    Value arg = evaluatedArgs.get(i);
-                    if (!(varargType.isAssignableFrom(arg.type()))) throw new RuntimeException("Cannot execute call operation. Argument type '" + arg.type() + "' is not assignable to parameter type '" + varargType + "'.");
-                    varargValues.add(arg);
-                }
-
-                ArrayValue varargValue = new ArrayValue(varargListType, varargValues);
-                currentScope.declare(new Symbol(false, varargName, varargType, varargValue));
-            }
-
-            Value returnedValue = node.body().accept(this);
-
-            currentScope = oldScope;
-
-            return returnedValue;
-        };
-    }
-
     @Override
     public Value visit(CallNode node) {
         Value evaluatedCallee = node.callee().accept(this);
@@ -388,6 +340,7 @@ public class Interpreter implements Visitor<Value> {
     public Value visit(FunctionNode node) {
         List<String> parameterNames = new ArrayList<>();
         List<TypeValue> parameterTypes = new ArrayList<>();
+        boolean vararg = node.vararg();
 
         for (ParameterNode parameter: node.parameters()) {
             parameterNames.add(parameter.name());
@@ -396,7 +349,42 @@ public class Interpreter implements Visitor<Value> {
 
         SignatureValue signatureValue = new SignatureValue(parameterTypes, evaluateToType(node.returnType()));
 
-        return new RuntimeFunctionValue(parameterNames, node.vararg(), signatureValue, node.body(), currentScope);
+        Function<List<Value>, Value> function = (args) -> {
+            Scope oldScope = currentScope;
+            currentScope = new Scope(oldScope);
+
+            for (int i = 0; i < (vararg ? parameterNames.size()-1 : parameterNames.size()); i++) {
+                ParameterNode parameter = node.parameters().get(i);
+                String parameterName = parameter.name();
+                TypeValue parameterType = evaluateToType(parameter.type());
+
+                currentScope.declare(new Symbol(false, parameterName, parameterType, args.get(i)));
+            }
+
+            if (vararg) {
+                String varargName = parameterNames.getLast();
+                TypeValue varargType = parameterTypes.getLast();
+                ArrayTypeValue varargListType = new ArrayTypeValue(varargType);
+
+                List<Value> varargValues = new ArrayList<>();
+                for (int i = parameterNames.size()-1; i < args.size(); i++) {
+                    Value arg = args.get(i);
+                    if (!(varargType.isAssignableFrom(arg.type()))) throw new RuntimeException("Cannot execute call operation. Argument type '" + arg.type() + "' is not assignable to parameter type '" + varargType + "'.");
+                    varargValues.add(arg);
+                }
+
+                ArrayValue varargValue = new ArrayValue(varargListType, varargValues);
+                currentScope.declare(new Symbol(false, varargName, varargType, varargValue));
+            }
+
+            Value returnedValue = node.body().accept(this);
+
+            currentScope = oldScope;
+
+            return returnedValue;
+        };
+
+        return new FunctionValue(vararg, signatureValue, function);
     }
 
     @Override
