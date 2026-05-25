@@ -15,10 +15,10 @@ public record SignatureValue(List<TypeValue> parameterTypes, TypeValue returnTyp
     @Override
     public String toString() {
         StringJoiner sj = new StringJoiner(",");
-        for (TypeValue parameterType: parameterTypes) {
+        for (TypeValue parameterType : parameterTypes) {
             sj.add(parameterType.toString());
         }
 
-        return "function(" + sj + ")(" + returnType + ")";
+        return "Function(" + sj + ")(" + returnType + ")";
     }
 }

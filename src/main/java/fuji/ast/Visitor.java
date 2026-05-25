@@ -36,4 +36,5 @@ public interface Visitor<R> {
     R visit(StructBlockNode node);
     R visit(EnumBlockNode node);
     R visit(TupleNode node);
+    R visit(InterfaceBlockNode node);
 }

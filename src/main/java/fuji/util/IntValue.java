@@ -58,7 +58,7 @@ public record IntValue(int value) implements NumberValue {
     @Override
     public NumberValue power(Value other) {
         if (other instanceof IntValue(int otherValue)) {
-            return new IntValue( (int) Math.pow(value, otherValue));
+            return new IntValue((int) Math.pow(value, otherValue));
         } else if (other instanceof FloatValue(double otherValue)) {
             return new FloatValue(Math.pow(value, otherValue));
         }
@@ -130,6 +130,6 @@ public record IntValue(int value) implements NumberValue {
 
     @Override
     public IntValue negative() {
-        return new IntValue( -value);
+        return new IntValue(-value);
     }
 }

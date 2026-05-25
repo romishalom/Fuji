@@ -21,7 +21,7 @@ public enum TokenType {
     IF, ELSE,
     WHILE, DO,
     IN, FOR,
-    OBJECT, MAP,
+    OBJECT, MAP, INTERFACE,
     ENUM,
     STRUCT,
     RETURN,

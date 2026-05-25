@@ -63,6 +63,8 @@ public class Interpreter implements Visitor<Value> {
 
             currentScope.declare(new Symbol(node.isConstant(), name, type, evaluatedValue));
         } else if (node.target() instanceof AccessNode(ExpressionNode parent, String name)) {
+
+
             Value evaluatedParent = parent.accept(this);
 
             if (!(evaluatedParent instanceof ObjectValue(Map<String, Value> binding))) throw new RuntimeException("Cannot execute declaration. External field declaration parent should be an object.");
@@ -221,9 +223,21 @@ public class Interpreter implements Visitor<Value> {
     @Override
     public Value visit(ObjectBlockNode node) {
         Map<String, Value> map = new LinkedHashMap<>();
-        for (PropertyNode property: node.properties()) {
-            map.put(property.name(), property.value().accept(this));
+        for (ExpressionNode parent: node.parents()) {
+            Value evaluatedParent = parent.accept(this);
+            if (!(evaluatedParent instanceof ObjectValue(, Map<String, Value> objectMap))) throw new RuntimeException("Cannot execute object block. Parent expression type must be an object.");
+            map.putAll(objectMap);
         }
+
+        ObjectValue objectValue = new ObjectValue(map);
+
+        Scope oldScope = currentScope;
+        currentScope = new Scope(currentScope);
+
+        // Define 'this'
+        currentScope.declare(new Symbol(true, "this", objectValue.type(), objectValue));
+
+        currentScope = oldScope;
 
         return new ObjectValue(map);
     }
@@ -250,90 +264,12 @@ public class Interpreter implements Visitor<Value> {
     @Override
     public Value visit(CallNode node) {
         Value evaluatedCallee = node.callee().accept(this);
-        if (evaluatedCallee instanceof RuntimeFunctionValue(List<String> parameterNames, boolean vararg, SignatureValue type, ExpressionNode body, Scope closure)) {
-            List<Value> evaluatedArgs = new ArrayList<>();
-            for (ExpressionNode argument: node.arguments()) {
-                evaluatedArgs.add(argument.accept(this));
-            }
-
-            Scope oldScope = currentScope;
-            currentScope = new Scope(closure);
-
-            if (!vararg && parameterNames.size()!=node.arguments().size()) throw new RuntimeException("Cannot execute call operation. Argument arity of " + parameterNames.size() + " is not compatible with parameter arity of " + node.arguments().size() + ".");
-            for (int i = 0; i< (vararg? parameterNames.size()-1 : parameterNames.size()); i++) {
-                String parameterName = parameterNames.get(i);
-                TypeValue parameterType = type.parameterTypes().get(i);
-                Value arguemntValue = evaluatedArgs.get(i);
-                if (!parameterType.isAssignableFrom(arguemntValue.type())) throw new RuntimeException("Cannot execute call operation. Argument type '" + arguemntValue.type() + "' is not assignable to parameter type '" + parameterType + "'.");
-                currentScope.declare(new Symbol(false, parameterName, parameterType, arguemntValue));
-            }
-
-            if (vararg) {
-                String varargName = parameterNames.getLast();
-                TypeValue varargType = type.parameterTypes().getLast();
-                ArrayTypeValue varargListType = new ArrayTypeValue(varargType);
-
-                List<Value> varargValues = new ArrayList<>();
-                for (int i = parameterNames.size()-1; i < evaluatedArgs.size(); i++) {
-                    Value arg = evaluatedArgs.get(i);
-                    if (!(varargType.isAssignableFrom(arg.type()))) throw new RuntimeException("Cannot execute call operation. Argument type '" + arg.type() + "' is not assignable to parameter type '" + varargType + "'.");
-                    varargValues.add(arg);
-                }
-
-                ArrayValue varargValue = new ArrayValue(varargListType, varargValues);
-                currentScope.declare(new Symbol(false, varargName, varargType, varargValue));
-            }
-
-            Value evaluated = body.accept(this);
-            if (!type.returnType().isAssignableFrom(evaluated.type())) throw new RuntimeException("Cannot execute call operation. Type '" + evaluated.type() + "' is not assignable to type '" + type.returnType() + "'.");
-            currentScope = oldScope;
-
-            return evaluated;
-        } else if (evaluatedCallee instanceof FunctionValue(boolean vararg, SignatureValue type, Function<List<Value>, Value> value)) {
-            if (!vararg && type.parameterTypes().size()!=node.arguments().size()) throw new RuntimeException("Cannot execute call operation. Argument arity of " + type.parameterTypes().size() + " is not compatible with parameter arity of " + node.arguments().size() + ".");
-
-            List<Value> args = new ArrayList<>();
-
-            for (int i = 0; i < (vararg? type.parameterTypes().size()-1 : node.arguments().size()); i++) {
-                Value evaluatedArg = node.arguments().get(i).accept(this);
-                if (!type.parameterTypes().get(i).isAssignableFrom(evaluatedArg.type()))
-                    throw new RuntimeException("Cannot execute call operation. Argument type '" + evaluatedArg.type() + "' is not assignable to parameter type '" + type.parameterTypes().get(i) + "'.");
-                args.add(evaluatedArg);
-
-            }
-
-            if (vararg) {
-                TypeValue varargType = type.parameterTypes().getLast();
-                for (int i = type.parameterTypes().size()-1; i < node.arguments().size(); i++) {
-                    Value arg = node.arguments().get(i).accept(this);
-                    if (!varargType.isAssignableFrom(arg.type())) throw new RuntimeException("Cannot execute call operation. Argument type '" + arg.type() + "' is not assignable to parameter type '" + varargType + "'.");
-                    args.add(arg);
-                }
-            }
-
-            Value evaluated = value.apply(args);
-
-            if (!type.returnType().isAssignableFrom(evaluated.type()))
-                throw new RuntimeException("Cannot execute call operation. Type '" + evaluated.type() + "' is not assignable to type '" + type.returnType() + "'.");
-
-            return evaluated;
-        } else if (evaluatedCallee instanceof ClassValue(Map<String, TypeValue> structMap)) {
-            Map<String, Value> map = new LinkedHashMap<>();
-            List<Map.Entry<String, TypeValue>> types = List.copyOf(structMap.entrySet());
-            for (int i = 0; i < node.arguments().size(); i++) {
-                Value evaluatedArg = node.arguments().get(i).accept(this);
-
-                if (types.get(i).getValue().isAssignableFrom(evaluatedArg.type())) {
-                    map.put(types.get(i).getKey(), evaluatedArg);
-                } else {
-                    throw new RuntimeException("Cannot evaluate call operation. Argument type '" + evaluatedArg.type() + "' is not compatible with field type '" + types.get(i));
-                }
-            }
-
-            return new ObjectValue(map);
+        List<Value> evaluatedArgs = new ArrayList<>();
+        for (ExpressionNode argument: node.arguments()) {
+            evaluatedArgs.add(argument.accept(this));
         }
 
-        throw new UnsupportedOperationException("Cannot evaluate call operation. Call operation is not supported for a initializer type '" + evaluatedCallee.type() + "'.");
+        return evaluatedCallee.call(evaluatedArgs);
     }
 
     @Override

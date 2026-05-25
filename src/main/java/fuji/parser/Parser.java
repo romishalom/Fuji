@@ -335,7 +335,7 @@ public class Parser {
 
                     if (check(TokenType.COLON)) {
                         current = saved;
-                        yield parseLambda();
+                        yield parseFunction();
                     } else if (check(TokenType.COMMA)) {
                         current = saved;
                         yield parseTuple();
@@ -346,7 +346,7 @@ public class Parser {
 
                 if (check(TokenType.COLON, TokenType.ARROW)) {
                     current = saved;
-                    yield parseLambda();
+                    yield parseFunction();
                 }
 
                 if (grouped == null) throw new ParsingError("Cannot parse empty '()' as a standalone expression.");
@@ -390,16 +390,10 @@ public class Parser {
             }
 
             case OBJECT -> {
-                List<ExpressionNode> parents = new ArrayList<>();
-                if (match(TokenType.EXTENDS)) {
-                    do {
-                        parents.add(parseExpression());
-                    } while (match(TokenType.COMMA));
-                }
+                List<ExpressionNode> parents = parseExtends();
+                List<PropertyNode> properties = parseProperties();
 
-                ExpressionNode body = parseExpression();
-
-                yield new ObjectBlockNode(parents, body);
+                yield new ObjectBlockNode(parents, properties);
             }
 
             case STRUCT -> {
@@ -412,18 +406,22 @@ public class Parser {
                 }
                 consume(TokenType.RIGHT_PARENTHESIS);
 
-                List<ExpressionNode> parents = new ArrayList<>();
-                if (match(TokenType.EXTENDS)) {
-                    do {
-                        parents.add(parseExpression());
-                    } while (match(TokenType.COMMA));
+                List<ExpressionNode> parents = parseExtends();
+                List<PropertyNode> properties = parseProperties();
+
+                yield new StructBlockNode(constructorParameters, parents, properties);
+            }
+
+            case INTERFACE -> {
+                List<ExpressionNode> parents = parseExtends();
+
+                consume(TokenType.LEFT_CURLY_BRACKET);
+                List<ParameterNode> fields = new ArrayList<>();
+                while (!match(TokenType.RIGHT_CURLY_BRACKET)) {
+                    fields.add(parseParameter());
                 }
 
-                ExpressionNode constructorBody = null;
-                if (check(TokenType.LEFT_CURLY_BRACKET))
-                    constructorBody = parseExpression();
-
-                yield new StructBlockNode(constructorParameters, parents, constructorBody);
+                yield new InterfaceBlockNode(parents, fields);
             }
 
             case ENUM -> {
@@ -464,7 +462,40 @@ public class Parser {
         return new ParameterNode(name, type);
     }
 
-    private FunctionNode parseLambda() {
+    private List<ExpressionNode> parseExtends() {
+        List<ExpressionNode> parents = new ArrayList<>();
+        if (match(TokenType.EXTENDS)) {
+            do {
+                parents.add(parseExpression());
+            } while (match(TokenType.COMMA));
+        }
+
+        return parents;
+    }
+
+    private List<PropertyNode> parseProperties() {
+        List<PropertyNode> properties = new ArrayList<>();
+        while (!match(TokenType.RIGHT_CURLY_BRACKET)) {
+            properties.add(parseProperty());
+        }
+
+        return properties;
+    }
+
+    private PropertyNode parseProperty() {
+        String name = consume(TokenType.IDENTIFIER).lexeme();
+        ExpressionNode type = null;
+        if (match(TokenType.COLON))
+            type = parseExpression();
+
+        ExpressionNode value = null;
+        if (match(TokenType.ASSIGN))
+            value = parseExpression();
+
+        return new PropertyNode(name, type, value);
+    }
+
+    private FunctionNode parseFunction() {
         List<ParameterNode> parameters = new ArrayList<>();
         boolean vararg = false;
         if (!check(TokenType.RIGHT_PARENTHESIS)) {
